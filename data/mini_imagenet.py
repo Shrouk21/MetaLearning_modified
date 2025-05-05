@@ -224,9 +224,9 @@ class FewShotDataloader():
             cat_ids: a list of length `sample_size` with unique category ids.
         """
         if cat_set=='base':
-            labelIds = self.dataset.labelIds_base
+            labelIds = list(self.dataset.labelIds_base)
         elif cat_set=='novel':
-            labelIds = self.dataset.labelIds_novel
+            labelIds = list(self.dataset.labelIds_novel)
         else:
             raise ValueError('Not recognized category set {}'.format(cat_set))
 
