@@ -105,7 +105,7 @@ def MetaOptNetHead_SVM_He(query, support, support_labels, n_way, n_shot, C_reg=0
         V = (V == torch.arange(n_way, device=device).float()).float()
         G = K * (V @ V.T)  # (n_support, n_support)
 
-        G_np = G.cpu().numpy()
+        G_np = G.detach().numpy()
         e_np = -np.ones(n_support, dtype=np.float64)
 
         z = cp.Variable(n_support)
