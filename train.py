@@ -130,7 +130,7 @@ if __name__ == '__main__':
         nTestNovel=opt.train_way * opt.train_query,  # num test examples for all the novel categories
         nTestBase=0,  # num test examples for all the base categories
         batch_size=opt.episodes_per_batch,
-        num_workers=2,
+        num_workers=4,
         epoch_size=opt.episodes_per_batch * 1000,  # num of batches per epoch
     )
 
