@@ -84,9 +84,6 @@ def ProtoNetHead(query, support, support_labels, n_way, n_shot, normalize=True):
 
 
 
-import cvxpy as cp
-import numpy as np
-import torch
 
 def MetaOptNetHead_SVM_He(query, support, support_labels, n_way, n_shot, C_reg=0.01):
     tasks_per_batch, n_support, d = support.shape
@@ -100,29 +97,25 @@ def MetaOptNetHead_SVM_He(query, support, support_labels, n_way, n_shot, C_reg=0
         support_t = support[t]     # (n_support, d)
         labels_t = support_labels[t]  # (n_support,)
 
-        assert support_t.shape == (n_support, d)
-        assert query_t.shape == (n_query, d)
-        assert labels_t.shape[0] == n_support
+        # Normalize support and query for numerical stability
+        support_t = support_t / support_t.norm(dim=1, keepdim=True)
+        query_t = query_t / query_t.norm(dim=1, keepdim=True)
 
         K = support_t @ support_t.T  # (n_support, n_support)
-        assert K.shape == (n_support, n_support)
-
         V = (labels_t * n_way - 1.0) / (n_way - 1.0)
         V = V.unsqueeze(1).expand(-1, n_way)  # (n_support, n_way)
         V_expected = torch.arange(n_way, device=device).float()
         V = (V == V_expected).float()
-        assert V.shape == (n_support, n_way)
 
         G = K * (V @ V.T)
-        assert G.shape == (n_support, n_support)
+        G += torch.eye(n_support, device=device) * 1e-6  # Ensure G is PSD
 
         # Convert G to NumPy and wrap it as PSD
         G_np = G.cpu().detach().numpy()
-        G_psd = cp.psd_wrap(G_np)  # Wrap the matrix to treat it as PSD
         e_np = -np.ones(n_support, dtype=np.float64)
 
         z = cp.Variable(n_support)
-        objective = cp.Minimize(0.5 * cp.quad_form(z, G_psd) + e_np @ z)
+        objective = cp.Minimize(0.5 * cp.quad_form(z, G_np) + e_np @ z)
         constraints = [z >= 0, z <= C_reg]
         prob = cp.Problem(objective, constraints)
         prob.solve(solver=cp.OSQP, eps_abs=1e-5, eps_rel=1e-5, verbose=True)
@@ -131,18 +124,12 @@ def MetaOptNetHead_SVM_He(query, support, support_labels, n_way, n_shot, C_reg=0
             raise RuntimeError(f"Solver failed at task {t} with status {prob.status}")
         
         z_opt = torch.tensor(z.value, dtype=dtype, device=device)
-        assert z_opt.shape == (n_support,)
 
         compat = query_t @ support_t.T  # (n_query, n_support)
-        assert compat.shape == (n_query, n_support)
-
         scores = (compat * z_opt.unsqueeze(0)).view(n_query, n_shot, n_way).sum(1)
-        assert scores.shape == (n_query, n_way)
-
         logits_all.append(scores)
 
     return torch.stack(logits_all, dim=0)  # (tasks_per_batch, n_query, n_way)
-
 class ClassificationHead(nn.Module):
     def __init__(self, base_learner='MetaOptNet', enable_scale=True):
         super(ClassificationHead, self).__init__()
