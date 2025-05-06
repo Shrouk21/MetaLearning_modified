@@ -96,14 +96,21 @@ def MetaOptNetHead_SVM_He(query, support, support_labels, n_way, n_shot, C_reg=0
         support_t = support[t]     # (n_support, d)
         labels_t = support_labels[t]  # (n_support,)
 
-        # Compute kernel matrix
-        K = support_t @ support_t.T  # (n_support, n_support)
+        assert support_t.shape == (n_support, d)
+        assert query_t.shape == (n_query, d)
+        assert labels_t.shape[0] == n_support
 
-        # Create V matrix
-        V = (labels_t * n_way - 1.0) / (n_way - 1.0)  # (n_support,)
+        K = support_t @ support_t.T  # (n_support, n_support)
+        assert K.shape == (n_support, n_support)
+
+        V = (labels_t * n_way - 1.0) / (n_way - 1.0)
         V = V.unsqueeze(1).expand(-1, n_way)  # (n_support, n_way)
-        V = (V == torch.arange(n_way, device=device).float()).float()
-        G = K * (V @ V.T)  # (n_support, n_support)
+        V_expected = torch.arange(n_way, device=device).float()
+        V = (V == V_expected).float()
+        assert V.shape == (n_support, n_way)
+
+        G = K * (V @ V.T)
+        assert G.shape == (n_support, n_support)
 
         G_np = G.cpu().detach().numpy()
         e_np = -np.ones(n_support, dtype=np.float64)
@@ -114,9 +121,18 @@ def MetaOptNetHead_SVM_He(query, support, support_labels, n_way, n_shot, C_reg=0
         prob = cp.Problem(objective, constraints)
         prob.solve(solver=cp.OSQP, eps_abs=1e-5, eps_rel=1e-5)
 
-        z_opt = torch.tensor(z.value, dtype=dtype, device=device)  # (n_support,)
+        if z.value is None:
+            raise RuntimeError(f"Solver failed at task {t} with status {prob.status}")
+        
+        z_opt = torch.tensor(z.value, dtype=dtype, device=device)
+        assert z_opt.shape == (n_support,)
+
         compat = query_t @ support_t.T  # (n_query, n_support)
+        assert compat.shape == (n_query, n_support)
+
         scores = (compat * z_opt.unsqueeze(0)).view(n_query, n_shot, n_way).sum(1)
+        assert scores.shape == (n_query, n_way)
+
         logits_all.append(scores)
 
     return torch.stack(logits_all, dim=0)  # (tasks_per_batch, n_query, n_way)
