@@ -4,7 +4,7 @@ import math
 #Build conv layer for feature extraction
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, retain_activation=True):
-        layers = = [
+        layers = [
             nn.Conv2d(in_channels, out_channels, 3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
         ]
