@@ -13,7 +13,7 @@ import torch.profiler  # Added for profiling
 
 from model.classification_head import ClassificationHead
 from models.R2D2_embedding import R2D2Embedding
-from models.protonet_embedding import ProtoNetEmbedding
+from model.protonet import ProtoNetEmbedding
 from models.ResNet12_embedding import resnet12
 
 from utils import set_gpu, Timer, count_accuracy, check_dir

@@ -15,7 +15,7 @@ class ConvBlock(nn.Module):
 
 
 #Build the embedding network (mapping feature space to fixed vector)
-class ProtoNet(nn.Module):
+class ProtoNetEmbedding(nn.Module):
     def __init__(self, x_dim=3, h_dim=64, z_dim=64, retain_last_activateion=True):
         self.encoder = nn.Sequential(
             ConvBlock(x_dim, h_dim),
