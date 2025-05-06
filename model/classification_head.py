@@ -84,6 +84,10 @@ def ProtoNetHead(query, support, support_labels, n_way, n_shot, normalize=True):
 
 
 
+import cvxpy as cp
+import numpy as np
+import torch
+
 def MetaOptNetHead_SVM_He(query, support, support_labels, n_way, n_shot, C_reg=0.01):
     tasks_per_batch, n_support, d = support.shape
     n_query = query.size(1)
@@ -112,11 +116,13 @@ def MetaOptNetHead_SVM_He(query, support, support_labels, n_way, n_shot, C_reg=0
         G = K * (V @ V.T)
         assert G.shape == (n_support, n_support)
 
+        # Convert G to NumPy and wrap it as PSD
         G_np = G.cpu().detach().numpy()
+        G_psd = cp.psd_wrap(G_np)  # Wrap the matrix to treat it as PSD
         e_np = -np.ones(n_support, dtype=np.float64)
 
         z = cp.Variable(n_support)
-        objective = cp.Minimize(0.5 * cp.quad_form(z, G_np) + e_np @ z)
+        objective = cp.Minimize(0.5 * cp.quad_form(z, G_psd) + e_np @ z)
         constraints = [z >= 0, z <= C_reg]
         prob = cp.Problem(objective, constraints)
         prob.solve(solver=cp.OSQP, eps_abs=1e-5, eps_rel=1e-5)
@@ -136,6 +142,7 @@ def MetaOptNetHead_SVM_He(query, support, support_labels, n_way, n_shot, C_reg=0
         logits_all.append(scores)
 
     return torch.stack(logits_all, dim=0)  # (tasks_per_batch, n_query, n_way)
+
 class ClassificationHead(nn.Module):
     def __init__(self, base_learner='MetaOptNet', enable_scale=True):
         super(ClassificationHead, self).__init__()
