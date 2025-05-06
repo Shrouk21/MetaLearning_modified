@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 import logging  # Added for logging
-import torch.profiler  # Added for profiling
+from torch.utils.tensorboard import SummaryWriter  # Added for TensorBoard
 
 from model.classification_head import ClassificationHead
 from models.R2D2_embedding import R2D2Embedding
@@ -153,6 +153,9 @@ if __name__ == '__main__':
     log_file_path = setup_logger(opt.save_path)  # Initialize logger
     logging.info(str(vars(opt)))
 
+    # Initialize TensorBoard SummaryWriter
+    writer = SummaryWriter(log_dir=opt.save_path)
+
     (embedding_net, cls_head) = get_model(opt)
 
     optimizer = torch.optim.SGD(
@@ -171,118 +174,122 @@ if __name__ == '__main__':
     timer = Timer()
     x_entropy = torch.nn.CrossEntropyLoss()
 
-    # Add PyTorch Profiler
-    with torch.profiler.profile(
-        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
-        on_trace_ready=torch.profiler.tensorboard_trace_handler(opt.save_path),
-        record_shapes=True,
-        with_stack=True,
-    ) as prof:
-        for epoch in range(1, opt.num_epoch + 1):
-            # Train on the training split
-            lr_scheduler.step()
+    for epoch in range(1, opt.num_epoch + 1):
+        # Train on the training split
+        lr_scheduler.step()
 
-            # Fetch the current epoch's learning rate
-            epoch_learning_rate = 0.1
-            for param_group in optimizer.param_groups:
-                epoch_learning_rate = param_group['lr']
+        # Fetch the current epoch's learning rate
+        epoch_learning_rate = 0.1
+        for param_group in optimizer.param_groups:
+            epoch_learning_rate = param_group['lr']
 
-            logging.info(f"Train Epoch: {epoch}\tLearning Rate: {epoch_learning_rate:.4f}")
+        logging.info(f"Train Epoch: {epoch}\tLearning Rate: {epoch_learning_rate:.4f}")
 
-            _, _ = [x.train() for x in (embedding_net, cls_head)]
+        _, _ = [x.train() for x in (embedding_net, cls_head)]
 
-            train_accuracies = []
-            train_losses = []
+        train_accuracies = []
+        train_losses = []
 
-            for i, batch in enumerate(tqdm(dloader_train(epoch)), 1):
-                data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
+        for i, batch in enumerate(tqdm(dloader_train(epoch)), 1):
+            data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
 
-                train_n_support = opt.train_way * opt.train_shot
-                train_n_query = opt.train_way * opt.train_query
+            train_n_support = opt.train_way * opt.train_shot
+            train_n_query = opt.train_way * opt.train_query
 
-                emb_support = embedding_net(data_support.reshape([-1] + list(data_support.shape[-3:])))
-                emb_support = emb_support.reshape(opt.episodes_per_batch, train_n_support, -1)
+            emb_support = embedding_net(data_support.reshape([-1] + list(data_support.shape[-3:])))
+            emb_support = emb_support.reshape(opt.episodes_per_batch, train_n_support, -1)
 
-                emb_query = embedding_net(data_query.reshape([-1] + list(data_query.shape[-3:])))
-                emb_query = emb_query.reshape(opt.episodes_per_batch, train_n_query, -1)
+            emb_query = embedding_net(data_query.reshape([-1] + list(data_query.shape[-3:])))
+            emb_query = emb_query.reshape(opt.episodes_per_batch, train_n_query, -1)
 
-                logit_query = cls_head(emb_query, emb_support, labels_support, opt.train_way, opt.train_shot)
+            logit_query = cls_head(emb_query, emb_support, labels_support, opt.train_way, opt.train_shot)
 
-                smoothed_one_hot = one_hot(labels_query.reshape(-1), opt.train_way)
-                smoothed_one_hot = smoothed_one_hot * (1 - opt.eps) + (1 - smoothed_one_hot) * opt.eps / (opt.train_way - 1)
+            smoothed_one_hot = one_hot(labels_query.reshape(-1), opt.train_way)
+            smoothed_one_hot = smoothed_one_hot * (1 - opt.eps) + (1 - smoothed_one_hot) * opt.eps / (opt.train_way - 1)
 
-                log_prb = F.log_softmax(logit_query.reshape(-1, opt.train_way), dim=1)
-                loss = -(smoothed_one_hot * log_prb).sum(dim=1)
-                loss = loss.mean()
+            log_prb = F.log_softmax(logit_query.reshape(-1, opt.train_way), dim=1)
+            loss = -(smoothed_one_hot * log_prb).sum(dim=1)
+            loss = loss.mean()
 
-                acc = count_accuracy(logit_query.reshape(-1, opt.train_way), labels_query.reshape(-1))
+            acc = count_accuracy(logit_query.reshape(-1, opt.train_way), labels_query.reshape(-1))
 
-                train_accuracies.append(acc.item())
-                train_losses.append(loss.item())
+            train_accuracies.append(acc.item())
+            train_losses.append(loss.item())
 
-                if i % 100 == 0:
-                    train_acc_avg = np.mean(np.array(train_accuracies))
-                    logging.info(
-                        f"Train Epoch: {epoch}\tBatch: [{i}/{len(dloader_train)}]\tLoss: {loss.item():.4f}\tAccuracy: {train_acc_avg:.2f} % ({acc:.2f} %)"
-                    )
-
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-            # Evaluate on the validation split
-            _, _ = [x.eval() for x in (embedding_net, cls_head)]
-
-            val_accuracies = []
-            val_losses = []
-
-            for i, batch in enumerate(tqdm(dloader_val(epoch)), 1):
-                data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
-
-                test_n_support = opt.test_way * opt.val_shot
-                test_n_query = opt.test_way * opt.val_query
-
-                emb_support = embedding_net(data_support.reshape([-1] + list(data_support.shape[-3:])))
-                emb_support = emb_support.reshape(1, test_n_support, -1)
-                emb_query = embedding_net(data_query.reshape([-1] + list(data_query.shape[-3:])))
-                emb_query = emb_query.reshape(1, test_n_query, -1)
-
-                logit_query = cls_head(emb_query, emb_support, labels_support, opt.test_way, opt.val_shot)
-
-                loss = x_entropy(logit_query.reshape(-1, opt.test_way), labels_query.reshape(-1))
-                acc = count_accuracy(logit_query.reshape(-1, opt.test_way), labels_query.reshape(-1))
-
-                val_accuracies.append(acc.item())
-                val_losses.append(loss.item())
-
-            val_acc_avg = np.mean(np.array(val_accuracies))
-            val_acc_ci95 = 1.96 * np.std(np.array(val_accuracies)) / np.sqrt(opt.val_episode)
-
-            val_loss_avg = np.mean(np.array(val_losses))
-
-            if val_acc_avg > max_val_acc:
-                max_val_acc = val_acc_avg
-                torch.save(
-                    {'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},
-                    os.path.join(opt.save_path, 'best_model.pth'),
-                )
+            if i % 100 == 0:
+                train_acc_avg = np.mean(np.array(train_accuracies))
                 logging.info(
-                    f"Validation Epoch: {epoch}\t\t\tLoss: {val_loss_avg:.4f}\tAccuracy: {val_acc_avg:.2f} ± {val_acc_ci95:.2f} % (Best)"
-                )
-            else:
-                logging.info(
-                    f"Validation Epoch: {epoch}\t\t\tLoss: {val_loss_avg:.4f}\tAccuracy: {val_acc_avg:.2f} ± {val_acc_ci95:.2f} %"
+                    f"Train Epoch: {epoch}\tBatch: [{i}/{len(dloader_train)}]\tLoss: {loss.item():.4f}\tAccuracy: {train_acc_avg:.2f} % ({acc:.2f} %)"
                 )
 
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+        # Log training metrics to TensorBoard
+        writer.add_scalar('Train/Loss', np.mean(train_losses), epoch)
+        writer.add_scalar('Train/Accuracy', np.mean(train_accuracies), epoch)
+
+        # Evaluate on the validation split
+        _, _ = [x.eval() for x in (embedding_net, cls_head)]
+
+        val_accuracies = []
+        val_losses = []
+
+        for i, batch in enumerate(tqdm(dloader_val(epoch)), 1):
+            data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
+
+            test_n_support = opt.test_way * opt.val_shot
+            test_n_query = opt.test_way * opt.val_query
+
+            emb_support = embedding_net(data_support.reshape([-1] + list(data_support.shape[-3:])))
+            emb_support = emb_support.reshape(1, test_n_support, -1)
+            emb_query = embedding_net(data_query.reshape([-1] + list(data_query.shape[-3:])))
+            emb_query = emb_query.reshape(1, test_n_query, -1)
+
+            logit_query = cls_head(emb_query, emb_support, labels_support, opt.test_way, opt.val_shot)
+
+            loss = x_entropy(logit_query.reshape(-1, opt.test_way), labels_query.reshape(-1))
+            acc = count_accuracy(logit_query.reshape(-1, opt.test_way), labels_query.reshape(-1))
+
+            val_accuracies.append(acc.item())
+            val_losses.append(loss.item())
+
+        val_acc_avg = np.mean(np.array(val_accuracies))
+        val_acc_ci95 = 1.96 * np.std(np.array(val_accuracies)) / np.sqrt(opt.val_episode)
+
+        val_loss_avg = np.mean(np.array(val_losses))
+
+        # Log validation metrics to TensorBoard
+        writer.add_scalar('Validation/Loss', val_loss_avg, epoch)
+        writer.add_scalar('Validation/Accuracy', val_acc_avg, epoch)
+
+        if val_acc_avg > max_val_acc:
+            max_val_acc = val_acc_avg
             torch.save(
                 {'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},
-                os.path.join(opt.save_path, 'last_epoch.pth'),
+                os.path.join(opt.save_path, 'best_model.pth'),
+            )
+            logging.info(
+                f"Validation Epoch: {epoch}\t\t\tLoss: {val_loss_avg:.4f}\tAccuracy: {val_acc_avg:.2f} ± {val_acc_ci95:.2f} % (Best)"
+            )
+        else:
+            logging.info(
+                f"Validation Epoch: {epoch}\t\t\tLoss: {val_loss_avg:.4f}\tAccuracy: {val_acc_avg:.2f} ± {val_acc_ci95:.2f} %"
             )
 
-            if epoch % opt.save_epoch == 0:
-                torch.save(
-                    {'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},
-                    os.path.join(opt.save_path, f'epoch_{epoch}.pth'),
-                )
+        torch.save(
+            {'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},
+            os.path.join(opt.save_path, 'last_epoch.pth'),
+        )
 
-            logging.info(f"Elapsed Time: {timer.measure()}/{timer.measure(epoch / float(opt.num_epoch))}\n")
+        if epoch % opt.save_epoch == 0:
+            torch.save(
+                {'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},
+                os.path.join(opt.save_path, f'epoch_{epoch}.pth'),
+            )
+
+        logging.info(f"Elapsed Time: {timer.measure()}/{timer.measure(epoch / float(opt.num_epoch))}\n")
+
+    # Close the TensorBoard writer
+    writer.close()
