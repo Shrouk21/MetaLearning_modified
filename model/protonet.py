@@ -4,6 +4,7 @@ import math
 #Build conv layer for feature extraction
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, retain_activation=True):
+        super().__init__()
         layers = [
             nn.Conv2d(in_channels, out_channels, 3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
@@ -11,7 +12,10 @@ class ConvBlock(nn.Module):
         if retain_activation:
             layers.append(nn.ReLU(inplace=True))
         layers.append(nn.MaxPool2d(2))
-        super().__init__(*layers)
+        self.block = nn.Sequential(*layers)
+    
+    def forward(self, x):
+        return self.block(x)
 
 
 #Build the embedding network (mapping feature space to fixed vector)
