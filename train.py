@@ -43,8 +43,6 @@ def get_model(options):
     # Choose the embedding network
     if options.network == 'ProtoNet':
         network = ProtoNetEmbedding().cuda()
-    elif options.network == 'R2D2':
-        network = R2D2Embedding().cuda()
     elif options.network == 'ResNet':
         if options.dataset == 'miniImageNet' or options.dataset == 'tieredImageNet':
             network = resnet12(avg_pool=False, drop_rate=0.1, dropblock_size=5).cuda()
@@ -58,10 +56,6 @@ def get_model(options):
     # Choose the classification head
     if options.head == 'ProtoNet':
         cls_head = ClassificationHead(base_learner='ProtoNet').cuda()
-    elif options.head == 'Ridge':
-        cls_head = ClassificationHead(base_learner='Ridge').cuda()
-    elif options.head == 'R2D2':
-        cls_head = ClassificationHead(base_learner='R2D2').cuda()
     elif options.head == 'SVM':
         cls_head = ClassificationHead(base_learner='SVM-He').cuda()
     else:
@@ -76,21 +70,6 @@ def get_dataset(options):
         from data.mini_imagenet import MiniImageNet, FewShotDataloader
         dataset_train = MiniImageNet(phase='train')
         dataset_val = MiniImageNet(phase='val')
-        data_loader = FewShotDataloader
-    elif options.dataset == 'tieredImageNet':
-        from data.tiered_imagenet import tieredImageNet, FewShotDataloader
-        dataset_train = tieredImageNet(phase='train')
-        dataset_val = tieredImageNet(phase='val')
-        data_loader = FewShotDataloader
-    elif options.dataset == 'CIFAR_FS':
-        from data.CIFAR_FS import CIFAR_FS, FewShotDataloader
-        dataset_train = CIFAR_FS(phase='train')
-        dataset_val = CIFAR_FS(phase='val')
-        data_loader = FewShotDataloader
-    elif options.dataset == 'FC100':
-        from data.FC100 import FC100, FewShotDataloader
-        dataset_train = FC100(phase='train')
-        dataset_val = FC100(phase='val')
         data_loader = FewShotDataloader
     else:
         logging.error("Cannot recognize the dataset type")

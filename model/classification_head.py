@@ -30,6 +30,7 @@ def binv_safe(b_mat, use_pinv=True, rcond=1e-5):
     Returns:
       Tensor of shape (batch_size, n, n)
     """
+    b_mat = b_mat.cuda()
     try:
         batch_size, n, _ = b_mat.shape
         I = torch.eye(n, device=b_mat.device).expand(batch_size, n, n)
