@@ -57,7 +57,7 @@ def get_model(options):
     elif options.head == 'R2D2':
         cls_head = ClassificationHead(base_learner='R2D2').cuda()
     elif options.head == 'SVM':
-        cls_head = ClassificationHead(base_learner='SVM-CS').cuda()
+        cls_head = ClassificationHead(base_learner='SVM-He').cuda()
     else:
         print ("Cannot recognize the dataset type")
         assert(False)
@@ -116,7 +116,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', default='0, 1, 2, 3')
     parser.add_argument('--network', type=str, default='ProtoNet',
                             help='choose which embedding network to use. ProtoNet, R2D2, ResNet')
-    parser.add_argument('--head', type=str, default='ProtoNet',
+    parser.add_argument('--head', type=str, default='SVM',
                             help='choose which classification head to use. ProtoNet, Ridge, R2D2, SVM')
     parser.add_argument('--dataset', type=str, default='miniImageNet',
                             help='choose which classification head to use. miniImageNet, tieredImageNet, CIFAR_FS, FC100')
