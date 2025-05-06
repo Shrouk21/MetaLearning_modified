@@ -114,7 +114,7 @@ if __name__ == '__main__':
                             help='number of classes in one test (or validation) episode')
     parser.add_argument('--save-path', default='./experiments/exp_1')
     parser.add_argument('--gpu', default='0, 1, 2, 3')
-    parser.add_argument('--network', type=str, default='ProtoNet',
+    parser.add_argument('--network', type=str, default='ResNet',
                             help='choose which embedding network to use. ProtoNet, R2D2, ResNet')
     parser.add_argument('--head', type=str, default='SVM',
                             help='choose which classification head to use. ProtoNet, Ridge, R2D2, SVM')
