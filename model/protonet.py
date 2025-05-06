@@ -1,4 +1,4 @@
-import torch as nn
+import torch.nn as nn
 import math
 
 #Build conv layer for feature extraction
