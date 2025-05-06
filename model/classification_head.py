@@ -118,7 +118,7 @@ def MetaOptNetHead_SVM_He(query, support, support_labels, n_way, n_shot, C_reg=0
         objective = cp.Minimize(0.5 * cp.quad_form(z, G_np) + e_np @ z)
         constraints = [z >= 0, z <= C_reg]
         prob = cp.Problem(objective, constraints)
-        prob.solve(solver=cp.OSQP, eps_abs=1e-5, eps_rel=1e-5, verbose=True)
+        prob.solve(solver=cp.OSQP, eps_abs=1e-5, eps_rel=1e-5, verbose=False)
 
         if z.value is None:
             raise RuntimeError(f"Solver failed at task {t} with status {prob.status}")
