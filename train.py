@@ -144,7 +144,7 @@ if __name__ == '__main__':
         nTestBase=0,  # num test examples for all the base categories
         batch_size=1,
         num_workers=0,
-        pin_memory=True
+        pin_memory=True,
         epoch_size=1 * opt.val_episode,  # num of batches per epoch
     )
 
