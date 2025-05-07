@@ -128,23 +128,16 @@ if __name__ == '__main__':
     set_gpu(opt.gpu)
     check_dir('./experiments/')
     check_dir(opt.save_path)
-
-    log_file_path = setup_logger(opt.save_path)  # Initialize logger
-    logging.info(str(vars(opt)))
-
-    # Initialize TensorBoard SummaryWriter
-    writer = SummaryWriter(log_dir=opt.save_path)
+    
+    log_file_path = os.path.join(opt.save_path, "train_log.txt")
+    log(log_file_path, str(vars(opt)))
 
     (embedding_net, cls_head) = get_model(opt)
-
-    optimizer = torch.optim.SGD(
-        [{'params': embedding_net.parameters()}, {'params': cls_head.parameters()}],
-        lr=0.1,
-        momentum=0.9,
-        weight_decay=5e-4,
-        nesterov=True,
-    )
-
+    
+    optimizer = torch.optim.SGD([{'params': embedding_net.parameters()}, 
+                                 {'params': cls_head.parameters()}], lr=0.1, momentum=0.9, \
+                                          weight_decay=5e-4, nesterov=True)
+    
     lambda_epoch = lambda e: 1.0 if e < 20 else (0.06 if e < 40 else 0.012 if e < 50 else (0.0024))
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_epoch, last_epoch=-1)
 
@@ -152,20 +145,21 @@ if __name__ == '__main__':
 
     timer = Timer()
     x_entropy = torch.nn.CrossEntropyLoss()
-
+    
     for epoch in range(1, opt.num_epoch + 1):
         # Train on the training split
         lr_scheduler.step()
-
+        
         # Fetch the current epoch's learning rate
         epoch_learning_rate = 0.1
         for param_group in optimizer.param_groups:
             epoch_learning_rate = param_group['lr']
-
-        logging.info(f"Train Epoch: {epoch}\tLearning Rate: {epoch_learning_rate:.4f}")
-
+            
+        log(log_file_path, 'Train Epoch: {}\tLearning Rate: {:.4f}'.format(
+                            epoch, epoch_learning_rate))
+        
         _, _ = [x.train() for x in (embedding_net, cls_head)]
-
+        
         train_accuracies = []
         train_losses = []
 
@@ -177,10 +171,10 @@ if __name__ == '__main__':
 
             emb_support = embedding_net(data_support.reshape([-1] + list(data_support.shape[-3:])))
             emb_support = emb_support.reshape(opt.episodes_per_batch, train_n_support, -1)
-
+            
             emb_query = embedding_net(data_query.reshape([-1] + list(data_query.shape[-3:])))
             emb_query = emb_query.reshape(opt.episodes_per_batch, train_n_query, -1)
-
+            
             logit_query = cls_head(emb_query, emb_support, labels_support, opt.train_way, opt.train_shot)
 
             smoothed_one_hot = one_hot(labels_query.reshape(-1), opt.train_way)
@@ -189,32 +183,27 @@ if __name__ == '__main__':
             log_prb = F.log_softmax(logit_query.reshape(-1, opt.train_way), dim=1)
             loss = -(smoothed_one_hot * log_prb).sum(dim=1)
             loss = loss.mean()
-
+            
             acc = count_accuracy(logit_query.reshape(-1, opt.train_way), labels_query.reshape(-1))
-
+            
             train_accuracies.append(acc.item())
             train_losses.append(loss.item())
 
-            if i % 100 == 0:
+            if (i % 100 == 0):
                 train_acc_avg = np.mean(np.array(train_accuracies))
-                logging.info(
-                    f"Train Epoch: {epoch}\tBatch: [{i}/{len(dloader_train)}]\tLoss: {loss.item():.4f}\tAccuracy: {train_acc_avg:.2f} % ({acc:.2f} %)"
-                )
-
+                log(log_file_path, 'Train Epoch: {}\tBatch: [{}/{}]\tLoss: {:.4f}\tAccuracy: {:.2f} % ({:.2f} %)'.format(
+                            epoch, i, len(dloader_train), loss.item(), train_acc_avg, acc))
+            
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
-        # Log training metrics to TensorBoard
-        writer.add_scalar('Train/Loss', np.mean(train_losses), epoch)
-        writer.add_scalar('Train/Accuracy', np.mean(train_accuracies), epoch)
 
         # Evaluate on the validation split
         _, _ = [x.eval() for x in (embedding_net, cls_head)]
 
         val_accuracies = []
         val_losses = []
-
+        
         for i, batch in enumerate(tqdm(dloader_val(epoch)), 1):
             data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
 
@@ -233,42 +222,27 @@ if __name__ == '__main__':
 
             val_accuracies.append(acc.item())
             val_losses.append(loss.item())
-
+            
         val_acc_avg = np.mean(np.array(val_accuracies))
         val_acc_ci95 = 1.96 * np.std(np.array(val_accuracies)) / np.sqrt(opt.val_episode)
 
         val_loss_avg = np.mean(np.array(val_losses))
 
-        # Log validation metrics to TensorBoard
-        writer.add_scalar('Validation/Loss', val_loss_avg, epoch)
-        writer.add_scalar('Validation/Accuracy', val_acc_avg, epoch)
-
         if val_acc_avg > max_val_acc:
             max_val_acc = val_acc_avg
-            torch.save(
-                {'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},
-                os.path.join(opt.save_path, 'best_model.pth'),
-            )
-            logging.info(
-                f"Validation Epoch: {epoch}\t\t\tLoss: {val_loss_avg:.4f}\tAccuracy: {val_acc_avg:.2f} ± {val_acc_ci95:.2f} % (Best)"
-            )
+            torch.save({'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},\
+                       os.path.join(opt.save_path, 'best_model.pth'))
+            log(log_file_path, 'Validation Epoch: {}\t\t\tLoss: {:.4f}\tAccuracy: {:.2f} ± {:.2f} % (Best)'\
+                  .format(epoch, val_loss_avg, val_acc_avg, val_acc_ci95))
         else:
-            logging.info(
-                f"Validation Epoch: {epoch}\t\t\tLoss: {val_loss_avg:.4f}\tAccuracy: {val_acc_avg:.2f} ± {val_acc_ci95:.2f} %"
-            )
+            log(log_file_path, 'Validation Epoch: {}\t\t\tLoss: {:.4f}\tAccuracy: {:.2f} ± {:.2f} %'\
+                  .format(epoch, val_loss_avg, val_acc_avg, val_acc_ci95))
 
-        torch.save(
-            {'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},
-            os.path.join(opt.save_path, 'last_epoch.pth'),
-        )
+        torch.save({'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()}\
+                   , os.path.join(opt.save_path, 'last_epoch.pth'))
 
         if epoch % opt.save_epoch == 0:
-            torch.save(
-                {'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},
-                os.path.join(opt.save_path, f'epoch_{epoch}.pth'),
-            )
+            torch.save({'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()}\
+                       , os.path.join(opt.save_path, 'epoch_{}.pth'.format(epoch)))
 
-        logging.info(f"Elapsed Time: {timer.measure()}/{timer.measure(epoch / float(opt.num_epoch))}\n")
-
-    # Close the TensorBoard writer
-    writer.close()
+        log(log_file_path, 'Elapsed Time: {}/{}\n'.format(timer.measure(), timer.measure(epoch / float(opt.num_epoch))))
