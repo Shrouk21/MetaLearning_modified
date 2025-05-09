@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 
-from model.classification_heads import ClassificationHead
+from model.classification_head import ClassificationHead
 from model.protonet_embedding import ProtoNetEmbedding
 from model.ResNet12_embedding import resnet12
 
