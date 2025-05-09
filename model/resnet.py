@@ -14,7 +14,7 @@ class convblock(nn.Module):
 
 class BasicBlock(nn.Module):
     expansion = 1
-    def __init__(self, inplanes, planes, stride=1, downsample=None, downsample=None, drop_rate=0.0, drop_block=False, block_size=1):
+    def __init__(self, inplanes, planes, stride=1,  downsample=None, drop_rate=0.0, drop_block=False, block_size=1):
         self.relu = nn.LeakyReLU(0.1, inplace=True)
         self.drop_rate = drop_rate
         self.drop_block = drop_block
