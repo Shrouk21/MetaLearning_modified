@@ -10,8 +10,8 @@ from torch.utils.data import DataLoader
 from torch.autograd import Variable
 
 from model.classification_head import ClassificationHead
-from model.protonet_embedding import ProtoNetEmbedding
-from model.ResNet12_embedding import resnet12
+from model.protonet import ProtoNetEmbedding
+from model.resnet import resnet12
 
 from utils import set_gpu, Timer, count_accuracy, check_dir, log
 
