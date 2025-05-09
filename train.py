@@ -40,6 +40,7 @@ def one_hot(indices, depth):
     encoded_indicies = encoded_indicies.scatter_(1, index, 1)
     return encoded_indicies
 
+
 def get_model(options):
     # Choose the embedding network
     if options.network == 'ProtoNet':
@@ -47,22 +48,22 @@ def get_model(options):
     elif options.network == 'ResNet':
         if options.dataset == 'miniImageNet' or options.dataset == 'tieredImageNet':
             network = resnet12(avg_pool=False, drop_rate=0.1, dropblock_size=5).cuda()
-            network = torch.nn.DataParallel(network, device_ids=[0])
+            network = torch.nn.DataParallel(network, device_ids=[0, 1, 2, 3])
         else:
             network = resnet12(avg_pool=False, drop_rate=0.1, dropblock_size=2).cuda()
     else:
-        logging.error("Cannot recognize the network type")
-        assert False
-
+        print ("Cannot recognize the network type")
+        assert(False)
+        
     # Choose the classification head
     if options.head == 'ProtoNet':
         cls_head = ClassificationHead(base_learner='ProtoNet').cuda()
     elif options.head == 'SVM':
         cls_head = ClassificationHead(base_learner='SVM-He').cuda()
     else:
-        logging.error("Cannot recognize the dataset type")
-        assert False
-
+        print ("Cannot recognize the dataset type")
+        assert(False)
+        
     return (network, cls_head)
 
 def get_dataset(options):
@@ -73,12 +74,10 @@ def get_dataset(options):
         dataset_val = MiniImageNet(phase='val')
         data_loader = FewShotDataloader
     else:
-        logging.error("Cannot recognize the dataset type")
-        assert False
-
+        print ("Cannot recognize the dataset type")
+        assert(False)
+        
     return (dataset_train, dataset_val, data_loader)
-
-        f.write(f'{message}\n')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
