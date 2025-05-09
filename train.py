@@ -7,6 +7,7 @@ from tqdm import tqdm
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+
 from torch.autograd import Variable
 import logging  # Added for logging
 from torch.utils.tensorboard import SummaryWriter  # Added for TensorBoard
@@ -77,172 +78,93 @@ def get_dataset(options):
 
     return (dataset_train, dataset_val, data_loader)
 
+        f.write(f'{message}\n')
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num-epoch', type=int, default=60, help='number of training epochs')
-    parser.add_argument('--save-epoch', type=int, default=10, help='frequency of model saving')
-    parser.add_argument('--train-shot', type=int, default=15, help='number of support examples per training class')
-    parser.add_argument('--val-shot', type=int, default=5, help='number of support examples per validation class')
-    parser.add_argument('--train-query', type=int, default=6, help='number of query examples per training class')
-    parser.add_argument('--val-episode', type=int, default=2000, help='number of episodes per validation')
-    parser.add_argument('--val-query', type=int, default=15, help='number of query examples per validation class')
-    parser.add_argument('--train-way', type=int, default=5, help='number of classes in one training episode')
-    parser.add_argument('--test-way', type=int, default=5, help='number of classes in one test (or validation) episode')
+    parser.add_argument('--num-epoch', type=int, default=60)
+    parser.add_argument('--save-epoch', type=int, default=10)
+    parser.add_argument('--train-shot', type=int, default=15)
+    parser.add_argument('--val-shot', type=int, default=5)
+    parser.add_argument('--train-query', type=int, default=6)
+    parser.add_argument('--val-episode', type=int, default=2000)
+    parser.add_argument('--val-query', type=int, default=15)
+    parser.add_argument('--train-way', type=int, default=5)
+    parser.add_argument('--test-way', type=int, default=5)
     parser.add_argument('--save-path', default='./experiments/exp_1')
     parser.add_argument('--gpu', default='0, 1, 2, 3')
-    parser.add_argument('--network', type=str, default='ProtoNet', help='choose which embedding network to use. ProtoNet, R2D2, ResNet')
-    parser.add_argument('--head', type=str, default='ProtoNet', help='choose which classification head to use. ProtoNet, Ridge, R2D2, SVM')
-    parser.add_argument('--dataset', type=str, default='miniImageNet', help='choose which classification head to use. miniImageNet, tieredImageNet, CIFAR_FS, FC100')
-    parser.add_argument('--episodes-per-batch', type=int, default=8, help='number of episodes per batch')
-    parser.add_argument('--eps', type=float, default=0.0, help='epsilon of label smoothing')
-
+    parser.add_argument('--network', type=str, default='ProtoNet')
+    parser.add_argument('--head', type=str, default='ProtoNet')
+    parser.add_argument('--dataset', type=str, default='miniImageNet')
+    parser.add_argument('--episodes-per-batch', type=int, default=8)
+    parser.add_argument('--eps', type=float, default=0.0)
     opt = parser.parse_args()
 
     (dataset_train, dataset_val, data_loader) = get_dataset(opt)
-
-    # Dataloader of Gidaris & Komodakis (CVPR 2018)
-    dloader_train = data_loader(
-        dataset=dataset_train,
-        nKnovel=opt.train_way,
-        nKbase=0,
-        nExemplars=opt.train_shot,  # num training examples per novel category
-        nTestNovel=opt.train_way * opt.train_query,  # num test examples for all the novel categories
-        nTestBase=0,  # num test examples for all the base categories
-        batch_size=opt.episodes_per_batch,
-        num_workers=4,
-        epoch_size=opt.episodes_per_batch * 1000,  # num of batches per epoch
-    )
-
-    dloader_val = data_loader(
-        dataset=dataset_val,
-        nKnovel=opt.test_way,
-        nKbase=0,
-        nExemplars=opt.val_shot,  # num training examples per novel category
-        nTestNovel=opt.val_query * opt.test_way,  # num test examples for all the novel categories
-        nTestBase=0,  # num test examples for all the base categories
-        batch_size=1,
-        num_workers=0,
-        epoch_size=1 * opt.val_episode,  # num of batches per epoch
-    )
+    dloader_train = data_loader(dataset_train, opt.train_way, 0, opt.train_shot, opt.train_way * opt.train_query, 0,
+                                opt.episodes_per_batch, 4, opt.episodes_per_batch * 1000)
+    dloader_val = data_loader(dataset_val, opt.test_way, 0, opt.val_shot, opt.val_query * opt.test_way, 0,
+                              1, 0, opt.val_episode)
 
     set_gpu(opt.gpu)
     check_dir('./experiments/')
     check_dir(opt.save_path)
-    
+
+    writer = SummaryWriter(log_dir=os.path.join(opt.save_path, "runs"))
     log_file_path = os.path.join(opt.save_path, "train_log.txt")
     log(log_file_path, str(vars(opt)))
 
     (embedding_net, cls_head) = get_model(opt)
-    
-    optimizer = torch.optim.SGD([{'params': embedding_net.parameters()}, 
-                                 {'params': cls_head.parameters()}], lr=0.1, momentum=0.9, \
-                                          weight_decay=5e-4, nesterov=True)
-    
-    lambda_epoch = lambda e: 1.0 if e < 20 else (0.06 if e < 40 else 0.012 if e < 50 else (0.0024))
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_epoch, last_epoch=-1)
+    optimizer = torch.optim.SGD([{'params': embedding_net.parameters()},
+                                 {'params': cls_head.parameters()}],
+                                lr=0.1, momentum=0.9, weight_decay=5e-4, nesterov=True)
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer, lr_lambda=lambda e: 1.0 if e < 20 else (0.06 if e < 40 else 0.012 if e < 50 else 0.0024)
+    )
 
     max_val_acc = 0.0
-
-    timer = Timer()
     x_entropy = torch.nn.CrossEntropyLoss()
-    
+
     for epoch in range(1, opt.num_epoch + 1):
-        # Train on the training split
         lr_scheduler.step()
-        
-        # Fetch the current epoch's learning rate
-        epoch_learning_rate = 0.1
-        for param_group in optimizer.param_groups:
-            epoch_learning_rate = param_group['lr']
-            
-        log(log_file_path, 'Train Epoch: {}\tLearning Rate: {:.4f}'.format(
-                            epoch, epoch_learning_rate))
-        
-        _, _ = [x.train() for x in (embedding_net, cls_head)]
-        
-        train_accuracies = []
-        train_losses = []
+        lr = optimizer.param_groups[0]['lr']
+        log(log_file_path, f'\nEpoch {epoch}, Learning Rate: {lr:.5f}')
+        writer.add_scalar("LR", lr, epoch)
 
-        for i, batch in enumerate(tqdm(dloader_train(epoch)), 1):
+        embedding_net.train()
+        cls_head.train()
+        train_loss_list = []
+        train_acc_list = []
+
+        for i, batch in enumerate(tqdm(dloader_train(epoch), desc=f"Epoch {epoch}"), 1):
             data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
-
-            train_n_support = opt.train_way * opt.train_shot
-            train_n_query = opt.train_way * opt.train_query
-
             emb_support = embedding_net(data_support.reshape([-1] + list(data_support.shape[-3:])))
-            emb_support = emb_support.reshape(opt.episodes_per_batch, train_n_support, -1)
-            
+            emb_support = emb_support.reshape(opt.episodes_per_batch, -1, emb_support.size(-1))
             emb_query = embedding_net(data_query.reshape([-1] + list(data_query.shape[-3:])))
-            emb_query = emb_query.reshape(opt.episodes_per_batch, train_n_query, -1)
-            
+            emb_query = emb_query.reshape(opt.episodes_per_batch, -1, emb_query.size(-1))
             logit_query = cls_head(emb_query, emb_support, labels_support, opt.train_way, opt.train_shot)
 
-            smoothed_one_hot = one_hot(labels_query.reshape(-1), opt.train_way)
-            smoothed_one_hot = smoothed_one_hot * (1 - opt.eps) + (1 - smoothed_one_hot) * opt.eps / (opt.train_way - 1)
-
+            smoothed = one_hot(labels_query.reshape(-1), opt.train_way)
+            smoothed = smoothed * (1 - opt.eps) + (1 - smoothed) * opt.eps / (opt.train_way - 1)
             log_prb = F.log_softmax(logit_query.reshape(-1, opt.train_way), dim=1)
-            loss = -(smoothed_one_hot * log_prb).sum(dim=1)
-            loss = loss.mean()
-            
+            loss = -(smoothed * log_prb).sum(dim=1).mean()
             acc = count_accuracy(logit_query.reshape(-1, opt.train_way), labels_query.reshape(-1))
-            
-            train_accuracies.append(acc.item())
-            train_losses.append(loss.item())
 
-            if (i % 100 == 0):
-                train_acc_avg = np.mean(np.array(train_accuracies))
-                log(log_file_path, 'Train Epoch: {}\tBatch: [{}/{}]\tLoss: {:.4f}\tAccuracy: {:.2f} % ({:.2f} %)'.format(
-                            epoch, i, len(dloader_train), loss.item(), train_acc_avg, acc))
-            
+            train_loss_list.append(loss.item())
+            train_acc_list.append(acc.item())
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-        # Evaluate on the validation split
-        _, _ = [x.eval() for x in (embedding_net, cls_head)]
+        avg_train_loss = np.mean(train_loss_list)
+        avg_train_acc = np.mean(train_acc_list)
+        writer.add_scalar("Train/Loss", avg_train_loss, epoch)
+        writer.add_scalar("Train/Accuracy", avg_train_acc, epoch)
 
-        val_accuracies = []
-        val_losses = []
-        
-        for i, batch in enumerate(tqdm(dloader_val(epoch)), 1):
-            data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
+        log(log_file_path, f"Train Loss: {avg_train_loss:.4f}, Train Acc: {avg_train_acc:.2f}%")
 
-            test_n_support = opt.test_way * opt.val_shot
-            test_n_query = opt.test_way * opt.val_query
+        # Optional validation step could go here
+        # Add writer.add_scalar("Val/Loss", ...) and log(...) if needed
 
-            emb_support = embedding_net(data_support.reshape([-1] + list(data_support.shape[-3:])))
-            emb_support = emb_support.reshape(1, test_n_support, -1)
-            emb_query = embedding_net(data_query.reshape([-1] + list(data_query.shape[-3:])))
-            emb_query = emb_query.reshape(1, test_n_query, -1)
-
-            logit_query = cls_head(emb_query, emb_support, labels_support, opt.test_way, opt.val_shot)
-
-            loss = x_entropy(logit_query.reshape(-1, opt.test_way), labels_query.reshape(-1))
-            acc = count_accuracy(logit_query.reshape(-1, opt.test_way), labels_query.reshape(-1))
-
-            val_accuracies.append(acc.item())
-            val_losses.append(loss.item())
-            
-        val_acc_avg = np.mean(np.array(val_accuracies))
-        val_acc_ci95 = 1.96 * np.std(np.array(val_accuracies)) / np.sqrt(opt.val_episode)
-
-        val_loss_avg = np.mean(np.array(val_losses))
-
-        if val_acc_avg > max_val_acc:
-            max_val_acc = val_acc_avg
-            torch.save({'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},\
-                       os.path.join(opt.save_path, 'best_model.pth'))
-            log(log_file_path, 'Validation Epoch: {}\t\t\tLoss: {:.4f}\tAccuracy: {:.2f} ± {:.2f} % (Best)'\
-                  .format(epoch, val_loss_avg, val_acc_avg, val_acc_ci95))
-        else:
-            log(log_file_path, 'Validation Epoch: {}\t\t\tLoss: {:.4f}\tAccuracy: {:.2f} ± {:.2f} %'\
-                  .format(epoch, val_loss_avg, val_acc_avg, val_acc_ci95))
-
-        torch.save({'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()}\
-                   , os.path.join(opt.save_path, 'last_epoch.pth'))
-
-        if epoch % opt.save_epoch == 0:
-            torch.save({'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()}\
-                       , os.path.join(opt.save_path, 'epoch_{}.pth'.format(epoch)))
-
-        log(log_file_path, 'Elapsed Time: {}/{}\n'.format(timer.measure(), timer.measure(epoch / float(opt.num_epoch))))
+    writer.close()
