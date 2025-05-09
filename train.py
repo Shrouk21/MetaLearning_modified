@@ -13,9 +13,8 @@ import logging  # Added for logging
 from torch.utils.tensorboard import SummaryWriter  # Added for TensorBoard
 
 from model.classification_head import ClassificationHead
-from models.R2D2_embedding import R2D2Embedding
 from model.protonet import ProtoNetEmbedding
-from models.ResNet12_embedding import resnet12
+
 
 from utils import set_gpu, Timer, count_accuracy, check_dir
 
