@@ -13,7 +13,9 @@ from model.classification_head import ClassificationHead
 from model.protonet import ProtoNetEmbedding
 from model.resnet import resnet12
 
+
 from utils import set_gpu, Timer, count_accuracy, check_dir, log
+from torch.utils.tensorboard import SummaryWriter
 
 def one_hot(indices, depth):
     """
@@ -136,123 +138,101 @@ if __name__ == '__main__':
     )
 
     set_gpu(opt.gpu)
-    check_dir('./experiments/')
-    check_dir(opt.save_path)
-    
-    log_file_path = os.path.join(opt.save_path, "train_log.txt")
-    log(log_file_path, str(vars(opt)))
+check_dir('./experiments/')
+check_dir(opt.save_path)
+log_file_path = os.path.join(opt.save_path, "train_log.txt")
+log(log_file_path, str(vars(opt)))
 
-    (embedding_net, cls_head) = get_model(opt)
-    
-    optimizer = torch.optim.SGD([{'params': embedding_net.parameters()}, 
-                                 {'params': cls_head.parameters()}], lr=0.1, momentum=0.9, \
-                                          weight_decay=5e-4, nesterov=True)
-    
-    lambda_epoch = lambda e: 1.0 if e < 20 else (0.06 if e < 40 else 0.012 if e < 50 else (0.0024))
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_epoch, last_epoch=-1)
+writer = SummaryWriter(log_dir=opt.save_path)
 
-    max_val_acc = 0.0
+(embedding_net, cls_head) = get_model(opt)
+optimizer = torch.optim.SGD([{'params': embedding_net.parameters()}, {'params': cls_head.parameters()}],
+                            lr=0.1, momentum=0.9, weight_decay=5e-4, nesterov=True)
+lambda_epoch = lambda e: 1.0 if e < 20 else (0.06 if e < 40 else 0.012 if e < 50 else 0.0024)
+lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_epoch)
 
-    timer = Timer()
-    x_entropy = torch.nn.CrossEntropyLoss()
-    
-    for epoch in range(1, opt.num_epoch + 1):
-        # Train on the training split
-        lr_scheduler.step()
-        
-        # Fetch the current epoch's learning rate
-        epoch_learning_rate = 0.1
-        for param_group in optimizer.param_groups:
-            epoch_learning_rate = param_group['lr']
-            
-        log(log_file_path, 'Train Epoch: {}\tLearning Rate: {:.4f}'.format(
-                            epoch, epoch_learning_rate))
-        
-        _, _ = [x.train() for x in (embedding_net, cls_head)]
-        
-        train_accuracies = []
-        train_losses = []
+max_val_acc = 0.0
+timer = Timer()
+x_entropy = torch.nn.CrossEntropyLoss()
 
-        for i, batch in enumerate(tqdm(dloader_train(epoch)), 1):
-            data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
+for epoch in range(1, opt.num_epoch + 1):
+    lr_scheduler.step()
+    epoch_lr = optimizer.param_groups[0]['lr']
+    log(log_file_path, f'Train Epoch: {epoch}\tLearning Rate: {epoch_lr:.4f}')
+    embedding_net.train(); cls_head.train()
 
-            train_n_support = opt.train_way * opt.train_shot
-            train_n_query = opt.train_way * opt.train_query
+    train_accuracies, train_losses = [], []
+    for i, batch in enumerate(tqdm(dloader_train(epoch)), 1):
+        data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
+        n_support, n_query = opt.train_way * opt.train_shot, opt.train_way * opt.train_query
 
-            emb_support = embedding_net(data_support.reshape([-1] + list(data_support.shape[-3:])))
-            emb_support = emb_support.reshape(opt.episodes_per_batch, train_n_support, -1)
-            
-            emb_query = embedding_net(data_query.reshape([-1] + list(data_query.shape[-3:])))
-            emb_query = emb_query.reshape(opt.episodes_per_batch, train_n_query, -1)
-            
-            logit_query = cls_head(emb_query, emb_support, labels_support, opt.train_way, opt.train_shot)
+        emb_support = embedding_net(data_support.reshape([-1] + list(data_support.shape[-3:])))
+        emb_support = emb_support.reshape(opt.episodes_per_batch, n_support, -1)
+        emb_query = embedding_net(data_query.reshape([-1] + list(data_query.shape[-3:])))
+        emb_query = emb_query.reshape(opt.episodes_per_batch, n_query, -1)
 
-            smoothed_one_hot = one_hot(labels_query.reshape(-1), opt.train_way)
-            smoothed_one_hot = smoothed_one_hot * (1 - opt.eps) + (1 - smoothed_one_hot) * opt.eps / (opt.train_way - 1)
+        logit_query = cls_head(emb_query, emb_support, labels_support, opt.train_way, opt.train_shot)
 
-            log_prb = F.log_softmax(logit_query.reshape(-1, opt.train_way), dim=1)
-            loss = -(smoothed_one_hot * log_prb).sum(dim=1)
-            loss = loss.mean()
-            
-            acc = count_accuracy(logit_query.reshape(-1, opt.train_way), labels_query.reshape(-1))
-            
-            train_accuracies.append(acc.item())
-            train_losses.append(loss.item())
+        smoothed = one_hot(labels_query.reshape(-1), opt.train_way)
+        smoothed = smoothed * (1 - opt.eps) + (1 - smoothed) * opt.eps / (opt.train_way - 1)
+        log_prb = F.log_softmax(logit_query.reshape(-1, opt.train_way), dim=1)
+        loss = -(smoothed * log_prb).sum(dim=1).mean()
+        acc = count_accuracy(logit_query.reshape(-1, opt.train_way), labels_query.reshape(-1))
 
-            if (i % 100 == 0):
-                train_acc_avg = np.mean(np.array(train_accuracies))
-                log(log_file_path, 'Train Epoch: {}\tBatch: [{}/{}]\tLoss: {:.4f}\tAccuracy: {:.2f} % ({:.2f} %)'.format(
-                            epoch, i, len(dloader_train), loss.item(), train_acc_avg, acc))
-            
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+        train_accuracies.append(acc.item())
+        train_losses.append(loss.item())
 
-        # Evaluate on the validation split
-        _, _ = [x.eval() for x in (embedding_net, cls_head)]
+        if i % 100 == 0:
+            avg_acc = np.mean(train_accuracies)
+            log(log_file_path, f'Epoch {epoch} Batch {i}/{len(dloader_train)} Loss: {loss.item():.4f} Acc: {avg_acc:.2f}% ({acc:.2f}%)')
 
-        val_accuracies = []
-        val_losses = []
-        
-        for i, batch in enumerate(tqdm(dloader_val(epoch)), 1):
-            data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-            test_n_support = opt.test_way * opt.val_shot
-            test_n_query = opt.test_way * opt.val_query
+    writer.add_scalar('Train/Loss', np.mean(train_losses), epoch)
+    writer.add_scalar('Train/Accuracy', np.mean(train_accuracies), epoch)
 
-            emb_support = embedding_net(data_support.reshape([-1] + list(data_support.shape[-3:])))
-            emb_support = emb_support.reshape(1, test_n_support, -1)
-            emb_query = embedding_net(data_query.reshape([-1] + list(data_query.shape[-3:])))
-            emb_query = emb_query.reshape(1, test_n_query, -1)
+    embedding_net.eval(); cls_head.eval()
+    val_accuracies, val_losses = [], []
+    for i, batch in enumerate(tqdm(dloader_val(epoch)), 1):
+        data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
+        n_support, n_query = opt.test_way * opt.val_shot, opt.test_way * opt.val_query
 
-            logit_query = cls_head(emb_query, emb_support, labels_support, opt.test_way, opt.val_shot)
+        emb_support = embedding_net(data_support.reshape([-1] + list(data_support.shape[-3:])))
+        emb_support = emb_support.reshape(1, n_support, -1)
+        emb_query = embedding_net(data_query.reshape([-1] + list(data_query.shape[-3:])))
+        emb_query = emb_query.reshape(1, n_query, -1)
 
-            loss = x_entropy(logit_query.reshape(-1, opt.test_way), labels_query.reshape(-1))
-            acc = count_accuracy(logit_query.reshape(-1, opt.test_way), labels_query.reshape(-1))
+        logit_query = cls_head(emb_query, emb_support, labels_support, opt.test_way, opt.val_shot)
+        loss = x_entropy(logit_query.reshape(-1, opt.test_way), labels_query.reshape(-1))
+        acc = count_accuracy(logit_query.reshape(-1, opt.test_way), labels_query.reshape(-1))
 
-            val_accuracies.append(acc.item())
-            val_losses.append(loss.item())
-            
-        val_acc_avg = np.mean(np.array(val_accuracies))
-        val_acc_ci95 = 1.96 * np.std(np.array(val_accuracies)) / np.sqrt(opt.val_episode)
+        val_accuracies.append(acc.item())
+        val_losses.append(loss.item())
 
-        val_loss_avg = np.mean(np.array(val_losses))
+    val_acc_avg = np.mean(val_accuracies)
+    val_loss_avg = np.mean(val_losses)
+    val_acc_ci95 = 1.96 * np.std(val_accuracies) / np.sqrt(opt.val_episode)
 
-        if val_acc_avg > max_val_acc:
-            max_val_acc = val_acc_avg
-            torch.save({'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},\
-                       os.path.join(opt.save_path, 'best_model.pth'))
-            log(log_file_path, 'Validation Epoch: {}\t\t\tLoss: {:.4f}\tAccuracy: {:.2f} ± {:.2f} % (Best)'\
-                  .format(epoch, val_loss_avg, val_acc_avg, val_acc_ci95))
-        else:
-            log(log_file_path, 'Validation Epoch: {}\t\t\tLoss: {:.4f}\tAccuracy: {:.2f} ± {:.2f} %'\
-                  .format(epoch, val_loss_avg, val_acc_avg, val_acc_ci95))
+    writer.add_scalar('Validation/Loss', val_loss_avg, epoch)
+    writer.add_scalar('Validation/Accuracy', val_acc_avg, epoch)
 
-        torch.save({'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()}\
-                   , os.path.join(opt.save_path, 'last_epoch.pth'))
+    if val_acc_avg > max_val_acc:
+        max_val_acc = val_acc_avg
+        torch.save({'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},
+                   os.path.join(opt.save_path, 'best_model.pth'))
+        log(log_file_path, f'Validation Epoch: {epoch}\tLoss: {val_loss_avg:.4f}\tAccuracy: {val_acc_avg:.2f} ± {val_acc_ci95:.2f}% (Best)')
+    else:
+        log(log_file_path, f'Validation Epoch: {epoch}\tLoss: {val_loss_avg:.4f}\tAccuracy: {val_acc_avg:.2f} ± {val_acc_ci95:.2f}%')
 
-        if epoch % opt.save_epoch == 0:
-            torch.save({'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()}\
-                       , os.path.join(opt.save_path, 'epoch_{}.pth'.format(epoch)))
+    torch.save({'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},
+               os.path.join(opt.save_path, 'last_epoch.pth'))
 
-        log(log_file_path, 'Elapsed Time: {}/{}\n'.format(timer.measure(), timer.measure(epoch / float(opt.num_epoch))))
+    if epoch % opt.save_epoch == 0:
+        torch.save({'embedding': embedding_net.state_dict(), 'head': cls_head.state_dict()},
+                   os.path.join(opt.save_path, f'epoch_{epoch}.pth'))
+
+    log(log_file_path, f'Elapsed Time: {timer.measure()}/{timer.measure(epoch / float(opt.num_epoch))}\n')
+
+writer.close()
