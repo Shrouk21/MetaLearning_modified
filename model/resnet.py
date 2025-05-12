@@ -32,6 +32,7 @@ class BasicBlock(nn.Module):
         self.downsample = downsample
         self.stride = stride
 
+        # Main convolution layers
         self.conv_bn_relu = nn.Sequential(
             convblock(inplanes, planes, stride),
             nn.BatchNorm2d(planes),
@@ -42,6 +43,13 @@ class BasicBlock(nn.Module):
             convblock(planes, planes),
             nn.BatchNorm2d(planes),
         )
+
+        # Shortcut (residual) path downsampling if necessary
+        if downsample is None and stride != 1 or inplanes != planes * self.expansion:
+            self.downsample = nn.Sequential(
+                nn.Conv2d(inplanes, planes * self.expansion, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(planes * self.expansion)
+            )
 
     def forward(self, x):
         self.num_batches_tracked += 1
