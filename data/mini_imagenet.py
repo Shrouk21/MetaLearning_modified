@@ -27,7 +27,7 @@ from pdb import set_trace as breakpoint
 
 
 # Set the appropriate paths of the datasets here.
-_MINI_IMAGENET_DATASET_DIR = '/content/data'
+_MINI_IMAGENET_DATASET_DIR = '/kaggle/working/data'
 
 def buildLabelIndex(labels):
     label2inds = {}
