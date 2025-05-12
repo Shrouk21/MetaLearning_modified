@@ -54,7 +54,7 @@ def get_model(options):
         cls_head = ClassificationHead(base_learner='ProtoNet').cuda()
 
     elif options.head == 'SVM':
-        cls_head = ClassificationHead(base_learner='SVM-He').cuda()
+        cls_head = ClassificationHead(base_learner='SVM-CS').cuda()
     else:
         print ("Cannot recognize the dataset type")
         assert(False)
