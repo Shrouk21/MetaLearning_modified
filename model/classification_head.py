@@ -144,8 +144,8 @@ def MetaOptNetHead_SVM_CS(query, support, support_labels, n_way, n_shot, C_reg=0
     assert n_support == n_way * n_shot
 
     K = computeGramMatrix(support, support)  # (T, n_support, n_support)
-
-    eye_way = torch.eye(n_way, device=device, dtype=dtype)
+    
+    eye_way = torch.eye(n_way, device=device, dtype=dtype).expand(tasks_per_batch, n_way, n_way)
     block_K = batched_kronecker(K, eye_way)  # (T, n_way*n_support, n_way*n_support)
     block_K += 1e-4 * torch.eye(n_way * n_support, device=device, dtype=dtype).unsqueeze(0)
 
