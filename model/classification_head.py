@@ -131,6 +131,43 @@ def MetaOptNetHead_SVM_He(query, support, support_labels, n_way, n_shot, C_reg=0
         logits_all.append(scores)
 
     return torch.stack(logits_all, dim=0)  # (tasks_per_batch, n_query, n_way)
+def MetaOptNetHead_SVM_CS(query, support, support_labels, n_way, n_shot, C_reg=0.1, double_precision=False, maxIter=15):
+    device = query.device
+    dtype = torch.float64 if double_precision else torch.float32
+
+    tasks_per_batch, n_query, d = query.shape
+    n_support = support.size(1)
+
+    assert n_support == n_way * n_shot
+
+    K = computeGramMatrix(support, support)  # (T, n_support, n_support)
+
+    eye_way = torch.eye(n_way, device=device, dtype=dtype)
+    block_K = batched_kronecker(K, eye_way)  # (T, n_way*n_support, n_way*n_support)
+    block_K += 1e-4 * torch.eye(n_way * n_support, device=device, dtype=dtype).unsqueeze(0)
+
+    labels_oh = one_hot(support_labels.view(-1), n_way).view(tasks_per_batch, n_support, n_way).reshape(tasks_per_batch, -1)
+    e = -labels_oh.to(dtype)
+
+    C = torch.eye(n_way * n_support, device=device, dtype=dtype).expand(tasks_per_batch, -1, -1)
+    h = (C_reg * labels_oh).to(dtype)
+
+    ones = torch.ones((tasks_per_batch, 1, n_way), device=device, dtype=dtype)
+    eye_supp = torch.eye(n_support, device=device, dtype=dtype).expand(tasks_per_batch, -1, -1)
+    A = batched_kronecker(eye_supp, ones)
+    b = torch.zeros((tasks_per_batch, n_support), device=device, dtype=dtype)
+
+    Q = block_K.to(dtype)
+    qp_sol = QPFunction(verbose=False, maxIter=maxIter)(Q, e.detach(), C.detach(), h.detach(), A.detach(), b.detach())
+
+    K_qs = computeGramMatrix(support, query).to(dtype)
+    K_qs = K_qs.unsqueeze(3).expand(-1, -1, -1, n_way)
+
+    alpha = qp_sol.view(tasks_per_batch, n_support, n_way).to(dtype)
+    alpha_exp = alpha.unsqueeze(2).expand(-1, -1, n_query, -1)
+
+    logits = torch.sum(alpha_exp * K_qs, dim=1)
+    return logits
 class ClassificationHead(nn.Module):
     def __init__(self, base_learner='MetaOptNet', enable_scale=True):
         super(ClassificationHead, self).__init__()
@@ -139,6 +176,8 @@ class ClassificationHead(nn.Module):
             self.head = ProtoNetHead
         elif ('SVM-He' in base_learner):
             self.head = MetaOptNetHead_SVM_He
+        elif ('SV,-CS' in base_learner):
+            self.head = MetaOptNetHead_SVM_CS
         else:
             print ("Cannot recognize the base learner type")
             assert(False)
