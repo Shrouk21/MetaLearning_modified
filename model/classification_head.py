@@ -176,7 +176,7 @@ class ClassificationHead(nn.Module):
             self.head = ProtoNetHead
         elif ('SVM-He' in base_learner):
             self.head = MetaOptNetHead_SVM_He
-        elif ('SV,-CS' in base_learner):
+        elif ('SV-CS' in base_learner):
             self.head = MetaOptNetHead_SVM_CS
         else:
             print ("Cannot recognize the base learner type")
