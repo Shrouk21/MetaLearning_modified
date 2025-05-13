@@ -87,7 +87,7 @@ if __name__ == '__main__':
                             help='number of support examples per validation class')
     parser.add_argument('--train-query', type=int, default=6,
                             help='number of query examples per training class')
-    parser.add_argument('--val-episode', type=int, default=2000,
+    parser.add_argument('--val-episode', type=int, default=20, #instead of 2000
                             help='number of episodes per validation')
     parser.add_argument('--val-query', type=int, default=15,
                             help='number of query examples per validation class')
@@ -122,7 +122,7 @@ if __name__ == '__main__':
         nTestBase=0, # num test examples for all the base categories
         batch_size=opt.episodes_per_batch,
         num_workers=4,
-        epoch_size=opt.episodes_per_batch * 1000, # num of batches per epoch
+        epoch_size=opt.episodes_per_batch * 10, # num of batches per epoch change back to 1000
     )
 
     dloader_val = data_loader(
@@ -191,6 +191,8 @@ for epoch in range(1, opt.num_epoch + 1):
     print(f"debugging writer:{np.mean(train_losses)}, {np.mean(train_accuracies)}")
     writer.add_scalar('Train/Loss', np.mean(train_losses), epoch)
     writer.add_scalar('Train/Accuracy', np.mean(train_accuracies), epoch)
+    writer.flush()
+    
 
     embedding_net.eval(); cls_head.eval()
     val_accuracies, val_losses = [], []
@@ -216,6 +218,7 @@ for epoch in range(1, opt.num_epoch + 1):
 
     writer.add_scalar('Validation/Loss', val_loss_avg, epoch)
     writer.add_scalar('Validation/Accuracy', val_acc_avg, epoch)
+    writer.flush()
 
     if val_acc_avg > max_val_acc:
         max_val_acc = val_acc_avg
