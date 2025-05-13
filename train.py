@@ -216,9 +216,10 @@ for epoch in range(1, opt.num_epoch + 1):
     val_loss_avg = np.mean(val_losses)
     val_acc_ci95 = 1.96 * np.std(val_accuracies) / np.sqrt(opt.val_episode)
     writer.add_scalars('Validation', {'Loss': val_loss_avg, 'Accuracy': val_acc_avg}, epoch)
-    #Adding some validation images to tensorboard
-    writer.add_images('Validation/Support', data_support, epoch)
-    writer.add_images('Validation/Query', data_query, epoch)
+
+    # Adding validation images to TensorBoard
+    writer.add_images('Validation/Support', data_support.view(-1, *data_support.shape[2:]), epoch)
+    writer.add_images('Validation/Query', data_query.view(-1, *data_query.shape[2:]), epoch)
 
     # writer.add_scalar('Validation/Loss', val_loss_avg, epoch)
     # writer.add_scalar('Validation/Accuracy', val_acc_avg, epoch)
