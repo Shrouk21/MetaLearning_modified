@@ -142,7 +142,7 @@ check_dir('/kaggle/working/experiments/exp_2/run/')
 check_dir(opt.save_path)
 log_file_path = os.path.join(opt.save_path, "train_log.txt")
 log(log_file_path, str(vars(opt)))
-writer = SummaryWriter()
+writer = SummaryWriter(log_dir=os.path.join(opt.save_path, 'run/'), comment='-train')
 
 (embedding_net, cls_head) = get_model(opt)
 optimizer = torch.optim.SGD([{'params': embedding_net.parameters()}, {'params': cls_head.parameters()}],
@@ -219,7 +219,7 @@ for epoch in range(1, opt.num_epoch + 1):
     #Adding some validation images to tensorboard
     writer.add_images('Validation/Support', data_support, epoch)
     writer.add_images('Validation/Query', data_query, epoch)
-    
+
     # writer.add_scalar('Validation/Loss', val_loss_avg, epoch)
     # writer.add_scalar('Validation/Accuracy', val_acc_avg, epoch)
     writer.flush()
