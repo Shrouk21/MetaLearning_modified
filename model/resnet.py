@@ -58,14 +58,14 @@ class BasicBlock(nn.Module):
         out += residual
         out = self.relu(out)
 
-        if self.drop_rate > 0:
-            if self.drop_block:
-                feat_size = out.size(2)
-                keep_rate = max(1.0 - self.drop_rate / (20 * 2000) * self.num_batches_tracked, 1.0 - self.drop_rate)
-                gamma = (1 - keep_rate) / self.drop_size**2 * feat_size**2 / (feat_size - self.drop_size + 1)**2
-                out = self.DropBlock(out, gamma=gamma)
-            else:
-                out = F.dropout(out, p=self.drop_rate, training=self.training, inplace=True)
+        # if self.drop_rate > 0:
+        #     if self.drop_block:
+        #         feat_size = out.size(2)
+        #         keep_rate = max(1.0 - self.drop_rate / (20 * 2000) * self.num_batches_tracked, 1.0 - self.drop_rate)
+        #         gamma = (1 - keep_rate) / self.drop_size**2 * feat_size**2 / (feat_size - self.drop_size + 1)**2
+        #         out = self.DropBlock(out, gamma=gamma)
+        #     else:
+        out = F.dropout(out, p=self.drop_rate, training=self.training, inplace=True)
 
         return out
 
