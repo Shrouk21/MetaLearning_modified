@@ -87,7 +87,7 @@ if __name__ == '__main__':
                             help='number of support examples per validation class')
     parser.add_argument('--train-query', type=int, default=6,
                             help='number of query examples per training class')
-    parser.add_argument('--val-episode', type=int, default=20, #instead of 2000
+    parser.add_argument('--val-episode', type=int, default=2000, #instead of 2000
                             help='number of episodes per validation')
     parser.add_argument('--val-query', type=int, default=15,
                             help='number of query examples per validation class')
@@ -122,7 +122,7 @@ if __name__ == '__main__':
         nTestBase=0, # num test examples for all the base categories
         batch_size=opt.episodes_per_batch,
         num_workers=4,
-        epoch_size=opt.episodes_per_batch * 10, # num of batches per epoch change back to 1000
+        epoch_size=opt.episodes_per_batch * 1000, # num of batches per epoch change back to 1000
     )
 
     dloader_val = data_loader(
@@ -138,7 +138,7 @@ if __name__ == '__main__':
     )
 
     set_gpu(opt.gpu)
-check_dir('./experiments/')
+check_dir('/kaggle/working/experiments/exp_2/run/')
 check_dir(opt.save_path)
 log_file_path = os.path.join(opt.save_path, "train_log.txt")
 log(log_file_path, str(vars(opt)))
@@ -188,9 +188,9 @@ for epoch in range(1, opt.num_epoch + 1):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-    print(f"debugging writer:{np.mean(train_losses)}, {np.mean(train_accuracies)}")
-    writer.add_scalar('Train/Loss', np.mean(train_losses), epoch)
-    writer.add_scalar('Train/Accuracy', np.mean(train_accuracies), epoch)
+    writer.add_scalars('Train', {'Loss': np.mean(train_losses), 'Accuracy': np.mean(train_accuracies)}, epoch)
+    # writer.add_scalar('Train/Loss', np.mean(train_losses), epoch)
+    # writer.add_scalar('Train/Accuracy', np.mean(train_accuracies), epoch)
     writer.flush()
     
 
@@ -215,9 +215,13 @@ for epoch in range(1, opt.num_epoch + 1):
     val_acc_avg = np.mean(val_accuracies)
     val_loss_avg = np.mean(val_losses)
     val_acc_ci95 = 1.96 * np.std(val_accuracies) / np.sqrt(opt.val_episode)
-
-    writer.add_scalar('Validation/Loss', val_loss_avg, epoch)
-    writer.add_scalar('Validation/Accuracy', val_acc_avg, epoch)
+    writer.add_scalars('Validation', {'Loss': val_loss_avg, 'Accuracy': val_acc_avg}, epoch)
+    #Adding some validation images to tensorboard
+    writer.add_images('Validation/Support', data_support, epoch)
+    writer.add_images('Validation/Query', data_query, epoch)
+    
+    # writer.add_scalar('Validation/Loss', val_loss_avg, epoch)
+    # writer.add_scalar('Validation/Accuracy', val_acc_avg, epoch)
     writer.flush()
 
     if val_acc_avg > max_val_acc:
@@ -236,5 +240,5 @@ for epoch in range(1, opt.num_epoch + 1):
                    os.path.join(opt.save_path, f'epoch_{epoch}.pth'))
 
     log(log_file_path, f'Elapsed Time: {timer.measure()}/{timer.measure(epoch / float(opt.num_epoch))}\n')
-
+writer.flush()
 writer.close()
