@@ -142,8 +142,7 @@ check_dir('./experiments/')
 check_dir(opt.save_path)
 log_file_path = os.path.join(opt.save_path, "train_log.txt")
 log(log_file_path, str(vars(opt)))
-
-writer = SummaryWriter(log_dir=opt.save_path)
+writer = SummaryWriter()
 
 (embedding_net, cls_head) = get_model(opt)
 optimizer = torch.optim.SGD([{'params': embedding_net.parameters()}, {'params': cls_head.parameters()}],
@@ -189,7 +188,7 @@ for epoch in range(1, opt.num_epoch + 1):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-
+    print(f"debugging writer:{np.mean(train_losses)}, {np.mean(train_accuracies)}")
     writer.add_scalar('Train/Loss', np.mean(train_losses), epoch)
     writer.add_scalar('Train/Accuracy', np.mean(train_accuracies), epoch)
 
