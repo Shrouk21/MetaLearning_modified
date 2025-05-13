@@ -23,7 +23,7 @@ class BasicBlock(nn.Module):
     def __init__(self, inplanes, planes, stride=1, downsample=None, drop_rate=0.0, drop_block=False, block_size=1):
         super(BasicBlock, self).__init__()
 
-        self.relu = nn.LeakyReLU(0.1, inplace=True)
+        self.relu = nn.LeakyReLU(0.1)
         self.drop_rate = drop_rate
         self.drop_block = drop_block
         self.drop_size = block_size
@@ -36,10 +36,10 @@ class BasicBlock(nn.Module):
         self.conv_bn_relu = nn.Sequential(
             convblock(inplanes, planes, stride),
             nn.BatchNorm2d(planes),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             convblock(planes, planes),
             nn.BatchNorm2d(planes),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             convblock(planes, planes),
             nn.BatchNorm2d(planes),
         )
@@ -65,7 +65,7 @@ class BasicBlock(nn.Module):
         #         gamma = (1 - keep_rate) / self.drop_size**2 * feat_size**2 / (feat_size - self.drop_size + 1)**2
         #         out = self.DropBlock(out, gamma=gamma)
         #     else:
-        out = F.dropout(out, p=self.drop_rate, training=self.training, inplace=True)
+        out = F.dropout(out, p=self.drop_rate, training=self.training, inplace=False)
 
         return out
 
