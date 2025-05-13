@@ -217,9 +217,17 @@ for epoch in range(1, opt.num_epoch + 1):
     val_acc_ci95 = 1.96 * np.std(val_accuracies) / np.sqrt(opt.val_episode)
     writer.add_scalars('Validation', {'Loss': val_loss_avg, 'Accuracy': val_acc_avg}, epoch)
 
-    # Adding validation images to TensorBoard
-    writer.add_images('Validation/Support', data_support.view(-1, *data_support.shape[2:]), epoch)
-    writer.add_images('Validation/Query', data_query.view(-1, *data_query.shape[2:]), epoch)
+    # Select one random image from data_support and data_query
+    random_index_support = random.randint(0, data_support.shape[1] - 1)  # Random index for support images
+    random_index_query = random.randint(0, data_query.shape[1] - 1)      # Random index for query images
+
+    # Extract the selected images
+    selected_support_image = data_support[0, random_index_support]  # Shape: (C, H, W)
+    selected_query_image = data_query[0, random_index_query]        # Shape: (C, H, W)
+
+    # Add the selected images to TensorBoard
+    writer.add_image('Validation/Support', selected_support_image, epoch)
+    writer.add_image('Validation/Query', selected_query_image, epoch)
 
     # writer.add_scalar('Validation/Loss', val_loss_avg, epoch)
     # writer.add_scalar('Validation/Accuracy', val_acc_avg, epoch)
