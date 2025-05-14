@@ -162,7 +162,7 @@ for epoch in range(1, opt.num_epoch + 1):
     embedding_net.train(); cls_head.train()
 
     train_accuracies, train_losses = [], []
-    for i, batch in enumerate(tqdm(dloader_train(epoch)), 1):
+    for i, batch in enumerate(tqdm(dloader_train, desc=f"Epoch {epoch} Training"), 1):
         data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
         n_support, n_query = opt.train_way * opt.train_shot, opt.train_way * opt.train_query
 
@@ -197,7 +197,7 @@ for epoch in range(1, opt.num_epoch + 1):
 
     embedding_net.eval(); cls_head.eval()
     val_accuracies, val_losses = [], []
-    for i, batch in enumerate(tqdm(dloader_val(epoch)), 1):
+    for i, batch in enumerate(tqdm(dloader_val, desc=f"Epoch {epoch} Validation"), 1):
         data_support, labels_support, data_query, labels_query, _, _ = [x.cuda() for x in batch]
         n_support, n_query = opt.test_way * opt.val_shot, opt.test_way * opt.val_query
 
