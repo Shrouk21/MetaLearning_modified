@@ -142,6 +142,7 @@ check_dir('/kaggle/working/experiments/exp_2/run/')
 check_dir(opt.save_path)
 log_file_path = os.path.join(opt.save_path, "train_log.txt")
 log(log_file_path, str(vars(opt)))
+print(f"TensorBoard log_dir will be: {os.path.join(opt.save_path, 'run/')}")
 writer = SummaryWriter(log_dir=os.path.join(opt.save_path, 'run/'), comment='-train')
 
 (embedding_net, cls_head) = get_model(opt)
