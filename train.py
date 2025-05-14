@@ -138,7 +138,7 @@ if __name__ == '__main__':
     )
 
     set_gpu(opt.gpu)
-check_dir('/kaggle/working/experiments/exp_2/run/')
+
 check_dir(opt.save_path)
 log_file_path = os.path.join(opt.save_path, "train_log.txt")
 log(log_file_path, str(vars(opt)))
@@ -190,7 +190,7 @@ for epoch in range(1, opt.num_epoch + 1):
         optimizer.step()
         lr_scheduler.step()
 
-    writer.add_scalars('Train', {'Loss': np.mean(train_losses), 'Accuracy': np.mean(train_accuracies)}, epoch)
+    writer.add_scalars('Train ResNet and SVM', {'Loss': np.mean(train_losses), 'Accuracy': np.mean(train_accuracies)}, epoch)
     # writer.add_scalar('Train/Loss', np.mean(train_losses), epoch)
     # writer.add_scalar('Train/Accuracy', np.mean(train_accuracies), epoch)
     writer.flush()
@@ -218,7 +218,7 @@ for epoch in range(1, opt.num_epoch + 1):
     val_acc_avg = np.mean(val_accuracies)
     val_loss_avg = np.mean(val_losses)
     val_acc_ci95 = 1.96 * np.std(val_accuracies) / np.sqrt(opt.val_episode)
-    writer.add_scalars('Validation', {'Loss': val_loss_avg, 'Accuracy': val_acc_avg}, epoch)
+    writer.add_scalars('Validation ResNet and SVM', {'Loss': val_loss_avg, 'Accuracy': val_acc_avg}, epoch)
 
     # Select one random image from data_support and data_query
     random_index_support = random.randint(0, data_support.shape[1] - 1)  # Random index for support images
@@ -229,8 +229,8 @@ for epoch in range(1, opt.num_epoch + 1):
     selected_query_image = data_query[0, random_index_query]        # Shape: (C, H, W)
 
     # Add the selected images to TensorBoard
-    writer.add_image('Validation/Support', selected_support_image, epoch)
-    writer.add_image('Validation/Query', selected_query_image, epoch)
+    writer.add_image('Validation ResNet/Support', selected_support_image, epoch)
+    writer.add_image('Validation ResNet/Query', selected_query_image, epoch)
 
     # writer.add_scalar('Validation/Loss', val_loss_avg, epoch)
     # writer.add_scalar('Validation/Accuracy', val_acc_avg, epoch)
