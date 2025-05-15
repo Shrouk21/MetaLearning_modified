@@ -107,7 +107,8 @@ if __name__ == '__main__':
                             help='number of episodes per batch')
     parser.add_argument('--eps', type=float, default=0.0,
                             help='epsilon of label smoothing')
-
+    parser.add_argument('--load', default=None,
+                            help='path of the checkpoint file')
     opt = parser.parse_args()
     
     (dataset_train, dataset_val, data_loader) = get_dataset(opt)
@@ -146,6 +147,11 @@ print(f"TensorBoard log_dir will be: {os.path.join(opt.save_path, 'run/')}")
 writer = SummaryWriter(log_dir=os.path.join(opt.save_path, 'run/'), comment='-train')
 
 (embedding_net, cls_head) = get_model(opt)
+if opt.load:
+    checkpoint = torch.load(opt.load)
+    embedding_net.load_state_dict(checkpoint['embedding'])
+    cls_head.load_state_dict(checkpoint['head'])
+    print(f"Loaded model from {opt.load}")
 optimizer = torch.optim.SGD([{'params': embedding_net.parameters()}, {'params': cls_head.parameters()}],
                             lr=0.1, momentum=0.9, weight_decay=5e-4, nesterov=True)
 lambda_epoch = lambda e: 1.0 if e < 20 else (0.06 if e < 40 else 0.012 if e < 50 else 0.0024)
