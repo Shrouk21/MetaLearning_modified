@@ -166,9 +166,7 @@ timer = Timer()
 x_entropy = torch.nn.CrossEntropyLoss()
 
 for epoch in range(1, opt.num_epoch + 1):
-    lr_scheduler.step()
-    epoch_lr = optimizer.param_groups[0]['lr']
-    log(log_file_path, f'Train Epoch: {epoch}\tLearning Rate: {epoch_lr:.4f}')
+    
     embedding_net.train(); cls_head.train()
 
     train_accuracies, train_losses = [], []
@@ -199,6 +197,9 @@ for epoch in range(1, opt.num_epoch + 1):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+    lr_scheduler.step()
+    epoch_lr = optimizer.param_groups[0]['lr']
+    log(log_file_path, f'Train Epoch: {epoch}\tLearning Rate: {epoch_lr:.4f}')
         
 
     writer.add_scalars('Train ResNet and SVM', {'Loss': np.mean(train_losses), 'Accuracy': np.mean(train_accuracies)}, epoch)
