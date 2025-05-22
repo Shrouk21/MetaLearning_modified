@@ -157,7 +157,9 @@ if opt.load:
 optimizer = torch.optim.SGD([{'params': embedding_net.parameters()}, {'params': cls_head.parameters()}],
                             lr=lr, momentum=0.9, weight_decay=5e-4, nesterov=True)
 lambda_epoch = lambda e: 1.0 if e < 20 else (0.06 if e < 40 else 0.012 if e < 50 else 0.0024)
-lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_epoch)
+# lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_epoch)
+#using cosine annealing
+lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=opt.num_epoch, eta_min=1e-5)
 
 max_val_acc = 0.0
 timer = Timer()
