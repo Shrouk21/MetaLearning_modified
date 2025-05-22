@@ -24,9 +24,9 @@ class DropBlock(nn.Module):
         block_mask = block_mask.to(x.device)
         block_mask = 1 - block_mask  # To keep the unmasked region
 
-        # Ensure block_mask matches x's shape
-        if block_mask.shape != x.shape:
-            block_mask = F.interpolate(block_mask.unsqueeze(0), size=(H, W), mode='nearest').squeeze(0)
+        # Make sure block_mask is exactly same size as x
+        block_mask = block_mask[:, :, :H, :W]
+
 
         norm_factor = block_mask.numel() / block_mask.sum()
         return x * block_mask * norm_factor
